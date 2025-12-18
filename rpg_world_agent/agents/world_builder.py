@@ -1,39 +1,29 @@
 import json
-from typing import Dict, Any, Optional
+import re
+from typing import Any, Dict, Optional
 
-# 引入配置和规则
-from config.rules import VALID_SKILLS, VALID_TAG_CATEGORIES, KNOWLEDGE_LEVELS
-from config.tool_schemas import WORLD_GEN_TOOLS
+from config.rules import KNOWLEDGE_LEVELS, VALID_SKILLS, VALID_TAG_CATEGORIES
 from config.settings import AGENT_CONFIG
-
+from config.tool_schemas import WORLD_GEN_TOOLS
 
 def get_world_builder_system_prompt() -> str:
-    """
-    动态生成 System Prompt。
-    """
-    # 1. 格式化基础规则
+    """动态生成 System Prompt。"""
     skills_str = ", ".join(VALID_SKILLS)
     tags_str = ", ".join(VALID_TAG_CATEGORIES)
-
-    # 2. 格式化工具定义
     tools_desc = json.dumps(WORLD_GEN_TOOLS, indent=2, ensure_ascii=False)
 
-    # ------------------------------------------------------------------
-    # 【修改点】去除了所有的 ```json 标记，直接展示 JSON 结构
-    # 【注意】f-string 中 JSON 的花括号依然需要双写 {{ }} 进行转义
-    # ------------------------------------------------------------------
-    return f'''
+    return f"""
 你是一个专业的 TRPG 世界架构师 (World Builder Agent)。
 你的目标是协助用户从零开始构建一个逻辑严密、细节丰富的游戏世界。
 
 【核心能力与规则】
 你拥有一系列强大的生成工具（Tools）。为了保证世界的一致性，你在思考或调用工具时必须严格遵守以下数据规范：
 
-1. **合法技能库 (Valid Skills)**: 
+1. **合法技能库 (Valid Skills)**:
    {skills_str}
    *注意：当你在设计 NPC 大纲或判定逻辑时，涉及技能必须从中选取，不得造词。*
 
-2. **合法身份标签 (Valid Tags)**: 
+2. **合法身份标签 (Valid Tags)**:
    {tags_str}
 
 3. **知识分级 (Knowledge Levels)**:
@@ -49,7 +39,8 @@ def get_world_builder_system_prompt() -> str:
 
 --- 特别说明：NPC 生成阶段 ---
 当你进行到 "Generate NPCs" 步骤时，**不要**仅仅告诉工具 "生成 3 个人"。
-你是一个更有主见的架构师。你需要根据当前的地图和政治局势，先在脑海中构思出关键人物的 **大纲 (Outlines)**，然后将这些大纲传给工具。
+你是一个更有主见的架构师。你需要根据当前的地图和政治局势，
+先在脑海中构思出关键人物的 **大纲 (Outlines)**，然后将这些大纲传给工具。
 
 **推荐思考模式：**
 "用户想要一个傀儡皇帝。那我就要构造一个 outline: {{'role': '皇帝', 'traits': '年幼, 恐惧', 'secret_hint': '被摄政王控制'}}。然后把这个传给 tool。"
@@ -67,7 +58,7 @@ def get_world_builder_system_prompt() -> str:
         "num_npcs": 3,
         "custom_outlines": [
             {{
-                "role": "皇帝", 
+                "role": "皇帝",
                 "traits": "傀儡, 年幼"
             }}
         ]
@@ -75,7 +66,7 @@ def get_world_builder_system_prompt() -> str:
 }}
 
 如果不需要调用工具（只是普通回复用户），则直接输出自然语言文本。
-'''
+"""
 
 
 class WorldBuilderAgent:
@@ -87,26 +78,22 @@ class WorldBuilderAgent:
     def __init__(self, model_client):
         self.client = model_client
         self.system_prompt = get_world_builder_system_prompt()
-        # 初始化历史记录
         self.history = [{"role": "system", "content": self.system_prompt}]
 
     def chat(self, user_input: str) -> Dict[str, Any]:
-        """
-        Agent 主循环
-        Returns:
-            Dict: { "type": "tool_call" | "text", "payload": ..., "raw_response": ... }
-        """
-        # 1. 添加用户输入
+        """Agent 主循环"""
         self.history.append({"role": "user", "content": user_input})
 
-        # 2. 调用 LLM
         print("🤖 WorldBuilder 正在思考...")
         try:
+            # 【解锁】使用全局配置的最大 Token 数
+            max_tokens_limit = AGENT_CONFIG["llm"].get("max_tokens", 8000)
+
             response = self.client.chat.completions.create(
                 model=AGENT_CONFIG["llm"]["model"],
                 messages=self.history,
-                temperature=0.3, # 降低温度，确保 JSON 格式稳定
-                max_tokens=2000
+                temperature=0.3,
+                max_tokens=max_tokens_limit  # 彻底放开限制！
             )
             content = response.choices[0].message.content
         except Exception as e:
@@ -116,10 +103,8 @@ class WorldBuilderAgent:
                 "raw_response": ""
             }
 
-        # 3. 将助手回复加入历史
         self.history.append({"role": "assistant", "content": content})
-
-        # 4. 解析并尝试拦截 Tool Call
+        
         tool_call_data = self._parse_tool_call(content)
 
         if tool_call_data:
@@ -136,34 +121,26 @@ class WorldBuilderAgent:
             }
 
     def _parse_tool_call(self, text: str) -> Optional[Dict]:
-        """
-        尝试从 LLM 的回复中提取 JSON 工具调用。
-        【修改版】不再依赖 markdown 标记，直接寻找最外层的 { ... }
-        """
+        """尝试从 LLM 的回复中提取 JSON 工具调用。"""
         try:
-            text = text.strip()
-
-            # 1. 寻找 JSON 的起止位置
-            # 找到第一个 '{' 和最后一个 '}'
-            start_idx = text.find('{')
-            end_idx = text.rfind('}')
+            # 1. (可选) 过滤掉 <think> 标签，防止干扰 JSON 提取
+            clean_text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+            
+            # 2. 寻找 JSON
+            start_idx = clean_text.find('{')
+            end_idx = clean_text.rfind('}')
 
             if start_idx == -1 or end_idx == -1:
                 return None
 
-            # 截取可能是 JSON 的部分
-            json_candidate = text[start_idx : end_idx + 1]
-
-            # 2. 解析 JSON
+            json_candidate = clean_text[start_idx : end_idx + 1]
             data = json.loads(json_candidate)
 
-            # 3. 验证关键字段
             if "tool_name" in data and "arguments" in data:
                 print(f"🔧 [Agent] 检测到工具调用: {data['tool_name']}")
                 return data
 
         except json.JSONDecodeError:
-            # 如果解析失败，说明不是合法的 JSON，可能是普通对话中包含了大括号
             return None
         except Exception as e:
             print(f"⚠️ [Agent] 解析工具调用时发生未知错误: {e}")
