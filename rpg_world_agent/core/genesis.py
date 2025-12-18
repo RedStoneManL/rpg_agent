@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from config.seeds import CRISIS_SEEDS
 from core.generators import ContentGenerator
+from core.map_engine import MapTopologyEngine
 
 
 class WorldGenerator:
@@ -78,3 +79,22 @@ class WorldGenerator:
             "geo_graph_l2": regions,
             "key_npcs_l1": npcs,
         }
+
+    # =========================================================================
+    # 🏗️ 引擎对接接口
+    # =========================================================================
+
+    def ingest_to_map_engine(self, llm_client) -> bool:
+        """
+        将生成的 L2 蓝图移交给 MapEngine 进行实体化施工。
+        Args:
+            llm_client: 传入 LLM 客户端，以便 MapEngine 生成路径描述。
+        """
+        if not self.generated_regions:
+            print("❌ [Genesis] 错误: 没有生成的区域数据，无法移交施工。")
+            return False
+
+        print("\n🏗️ [Genesis] 正在将蓝图移交给工程队 (MapEngine)...")
+        engine = MapTopologyEngine(llm_client=llm_client)
+        success = engine.ingest_l2_graph(self.generated_regions, self.current_config)
+        return success
