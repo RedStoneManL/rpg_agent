@@ -1,49 +1,103 @@
-"""Lightweight database client placeholders for Redis and MinIO access."""
+"""Database client providing Redis and MinIO access for the agent."""
 
+import io
 import json
 from typing import Any, Dict, Optional
 
+import redis
+import urllib3
+from minio import Minio
 
-class MockRedis:
-    """Simple in-memory Redis-like store for development and testing."""
-
-    def __init__(self):
-        self.storage: Dict[str, Any] = {}
-        self.lists: Dict[str, list] = {}
-
-    def rpush(self, key: str, value: str) -> None:
-        self.lists.setdefault(key, []).append(value)
-
-    def lrange(self, key: str, start: int, end: int):
-        items = self.lists.get(key, [])
-        if end == -1:
-            end = None
-        else:
-            end += 1
-        return items[start:end]
-
-    def expire(self, key: str, _ttl: int) -> None:
-        return None
-
-    def hset(self, key: str, mapping: Dict[str, Any]) -> None:
-        self.storage.setdefault(key, {}).update(mapping)
-
-    def hgetall(self, key: str) -> Dict[str, Any]:
-        return self.storage.get(key, {})
+from config.settings import AGENT_CONFIG
 
 
 class DBClient:
-    """Facade for storage services used by the agents."""
+    """Lazy-initialized clients for external storage services."""
 
-    _redis_instance: Optional[MockRedis] = None
+    _redis_instance: Optional[redis.Redis] = None
+    _minio_instance: Optional[Minio] = None
 
     @classmethod
-    def get_redis(cls) -> MockRedis:
+    def get_redis(cls) -> redis.Redis:
+        """Return a singleton Redis client configured from ``AGENT_CONFIG``."""
+
         if cls._redis_instance is None:
-            cls._redis_instance = MockRedis()
+            conf = AGENT_CONFIG["redis"]
+            try:
+                cls._redis_instance = redis.Redis(
+                    host=conf["host"],
+                    port=conf["port"],
+                    password=conf["password"],
+                    db=conf["db"],
+                    decode_responses=True,
+                    socket_timeout=2,
+                )
+                cls._redis_instance.ping()
+                print("✅ Redis 连接成功")
+            except Exception as exc:  # noqa: BLE001
+                print(f"❌ Redis 连接失败: {exc}")
+                raise
         return cls._redis_instance
 
     @classmethod
-    def save_json_to_minio(cls, object_name: str, data: Dict[str, Any]) -> None:
-        with open(object_name.replace("/", "_"), "w", encoding="utf-8") as file:
-            file.write(json.dumps(data, ensure_ascii=False, indent=2))
+    def get_minio(cls) -> Minio:
+        """Return a singleton MinIO client configured from ``AGENT_CONFIG``."""
+
+        if cls._minio_instance is None:
+            conf = AGENT_CONFIG["minio"]
+            http_client = None
+            if conf["secure"]:
+                http_client = urllib3.PoolManager(
+                    cert_reqs="CERT_NONE",
+                    assert_hostname=False,
+                )
+
+            try:
+                cls._minio_instance = Minio(
+                    conf["endpoint"],
+                    access_key=conf["access_key"],
+                    secret_key=conf["secret_key"],
+                    secure=conf["secure"],
+                    http_client=http_client,
+                )
+                if not cls._minio_instance.bucket_exists(conf["bucket_name"]):
+                    cls._minio_instance.make_bucket(conf["bucket_name"])
+                print("✅ MinIO 连接成功")
+            except Exception as exc:  # noqa: BLE001
+                print(f"❌ MinIO 连接失败: {exc}")
+                raise
+        return cls._minio_instance
+
+    @staticmethod
+    def save_json_to_minio(object_name: str, data: Dict[str, Any]) -> None:
+        """Persist JSON data to MinIO as a single object."""
+
+        client = DBClient.get_minio()
+        bucket = AGENT_CONFIG["minio"]["bucket_name"]
+        json_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        data_stream = io.BytesIO(json_bytes)
+        client.put_object(
+            bucket,
+            object_name,
+            data_stream,
+            len(json_bytes),
+            content_type="application/json",
+        )
+
+    @staticmethod
+    def load_json_from_minio(object_name: str) -> Optional[Dict[str, Any]]:
+        """Load JSON data from MinIO, returning ``None`` when missing."""
+
+        client = DBClient.get_minio()
+        bucket = AGENT_CONFIG["minio"]["bucket_name"]
+        response = None
+        try:
+            response = client.get_object(bucket, object_name)
+            data = json.loads(response.read().decode("utf-8"))
+            return data
+        except Exception:  # noqa: BLE001
+            return None
+        finally:
+            if response is not None:
+                response.close()
+                response.release_conn()
