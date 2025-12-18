@@ -1,10 +1,17 @@
 """Session cognition and state management backed by Redis and MinIO."""
 
 import json
-from typing import Dict, List
+from typing import Dict, List, TypedDict
 
 from config.settings import AGENT_CONFIG
 from data.db_client import DBClient
+
+
+class MessagePayload(TypedDict):
+    """轻量级消息结构，用于 Redis 序列化。"""
+
+    role: str
+    content: str
 
 
 class CognitionSystem:
@@ -21,12 +28,12 @@ class CognitionSystem:
 
     def add_message(self, role: str, content: str) -> None:
         """写入短期记忆 (对话流)。"""
-        msg = json.dumps({"role": role, "content": content}, ensure_ascii=False)
-        self.redis.rpush(self.history_key, msg)
+        msg: MessagePayload = {"role": role, "content": content}
+        self.redis.rpush(self.history_key, json.dumps(msg, ensure_ascii=False))
         self.redis.expire(self.history_key, self.ttl)
 
-    def get_recent_history(self, limit: int = 10) -> List[Dict]:
-        """获取最近的对话上下文。"""
+    def get_recent_history(self, limit: int = 10) -> List[MessagePayload]:
+        """获取 Context Window，按需截取最近消息。"""
         raw_msgs = self.redis.lrange(self.history_key, -limit, -1)
         return [json.loads(message) for message in raw_msgs]
 
