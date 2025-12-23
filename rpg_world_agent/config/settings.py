@@ -3,6 +3,12 @@
 import os
 
 AGENT_CONFIG = {
+    "genre": os.getenv("RPG_GENRE", "Cyberpunk/Lovecraftian"),
+    "tone": os.getenv("RPG_TONE", "Dark & Gritty"),
+    "final_conflict": os.getenv(
+        "RPG_FINAL_CONFLICT",
+        "The Awakening of the Old Ones",
+    ),
     "llm": {
         "base_url": os.getenv("RPG_LLM_BASE_URL", "http://100.102.191.192:1025/v1"),
         "api_key": os.getenv("RPG_LLM_API_KEY", "xx"),
