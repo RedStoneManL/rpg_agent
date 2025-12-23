@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import uuid
 from typing import Dict, List, Optional
 
 from config.settings import AGENT_CONFIG
@@ -185,3 +186,81 @@ class MapTopologyEngine:
 
         print("✅ L2 地图构建完成。路网信息已生成。")
         return True
+
+    def create_dynamic_sub_location(self, parent_id: str, keyword: str) -> Optional[str]:
+        parent_node = self.get_node(parent_id)
+        if not parent_node:
+            logger.error("父节点不存在，无法生成动态子区域")
+            return None
+
+        if not self.llm_client:
+            logger.error("LLM 未配置，无法生成动态子区域")
+            return None
+
+        prompt = f"""
+你是一名强调物理落地性的地图细分设计师，请基于玩家意图生成一个可抵达的新子地点。
+父级位置: {parent_node.get('name')} ({parent_node.get('geo_feature', '未知特征')})
+父级描述: {parent_node.get('desc')}
+玩家想探索: "{keyword}"
+
+请生成与父级地理相符、避免抽象隐喻的地点，保持通路合理、可被感知。
+输出严格的 JSON（不要使用 Markdown 代码块），字段如下：
+{{
+  "name": "地点名",
+  "desc": "简洁描述，强调可感知的物理细节",
+  "geo_feature": "地貌或建筑特征",
+  "risk_level": 1-5 的整数,
+  "connection_path_name": "到达该处的路径名称 (如 Rusty Ladder, Secret Corridor)"
+}}
+"""
+
+        try:
+            response = self.llm_client.chat.completions.create(
+                model=AGENT_CONFIG["llm"]["model"],
+                messages=[{"role": "user", "content": prompt}],
+                temperature=AGENT_CONFIG["llm"].get("temperature", 0.2),
+                max_tokens=AGENT_CONFIG["stages"].get("map_gen", 2000),
+            )
+            content = response.choices[0].message.content
+            cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+            cleaned = re.sub(r"```(?:json)?", "", cleaned, flags=re.IGNORECASE).replace("```", "").strip()
+
+            start_idx = cleaned.find("{")
+            end_idx = cleaned.rfind("}")
+            if start_idx == -1 or end_idx == -1:
+                raise ValueError("未找到 JSON 结构")
+
+            node_info = json.loads(cleaned[start_idx : end_idx + 1])
+        except Exception as exc:  # noqa: BLE001
+            logger.error("动态子区域生成失败: %s", exc)
+            return None
+
+        risk_level_raw = node_info.get("risk_level", 1)
+        try:
+            risk_level = int(risk_level_raw)
+        except (TypeError, ValueError):
+            risk_level = 1
+
+        new_node_id = uuid.uuid4().hex
+        node_data = {
+            "name": node_info.get("name", f"{keyword}之地"),
+            "desc": node_info.get("desc", ""),
+            "geo_feature": node_info.get("geo_feature", "未知"),
+            "risk_level": risk_level,
+            "parent_id": parent_id,
+            "keyword": keyword,
+        }
+
+        if not self.save_node(new_node_id, node_data, node_type="L3_Dynamic"):
+            return None
+
+        route_data = {
+            "route_name": node_info.get("connection_path_name", "未知通路"),
+            "description": "Generated path linking parent location to dynamic sub-location.",
+            "risk_level": risk_level,
+        }
+
+        if not self.connect_nodes_with_concept(parent_id, new_node_id, route_data):
+            return None
+
+        return new_node_id
