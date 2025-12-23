@@ -1,3 +1,4 @@
+import ast
 import json
 import random
 import re
@@ -26,6 +27,26 @@ class RuntimeEngine:
             print(f"\n🐛 [DEBUG: {title}]")
             print(str(content))
             print("-" * 40)
+
+    def _normalize_state_list(self, value: Any) -> List[str]:
+        if isinstance(value, list):
+            return value
+
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                try:
+                    parsed = ast.literal_eval(value)
+                except (ValueError, SyntaxError):
+                    parsed = None
+
+            if isinstance(parsed, list):
+                return parsed
+
+            return [value]
+
+        return []
 
     def initialize_player(self, start_location_id: str, initial_tags: List[str] | None = None) -> None:
         default_state = {
@@ -115,15 +136,53 @@ class RuntimeEngine:
         if not node_data:
             return "❌ 这里的空间似乎崩塌了 (Location Data Missing)。"
 
+        player_state = self.cognition.get_player_state()
+        player_tags = self._normalize_state_list(player_state.get("tags"))
+        player_skills = self._normalize_state_list(player_state.get("skills"))
+
+        layers = node_data.get("layers") if isinstance(node_data.get("layers"), dict) else {}
+        base_desc = node_data.get("desc")
+        if not base_desc and isinstance(layers.get("public"), dict):
+            base_desc = layers["public"].get("desc")
+
+        revealed_layers: List[str] = []
+        for layer_name, layer_data in layers.items():
+            if layer_name == "public" or not isinstance(layer_data, dict):
+                continue
+
+            access_req = layer_data.get("access_req")
+            access_req = access_req if isinstance(access_req, dict) else {}
+            required_tags = self._normalize_state_list(access_req.get("tags"))
+            required_skills = self._normalize_state_list(access_req.get("skills"))
+            logic = str(access_req.get("logic", "OR")).upper()
+
+            if logic == "AND":
+                has_access = all(tag in player_tags for tag in required_tags) and all(
+                    skill in player_skills for skill in required_skills
+                )
+            else:
+                has_access = any(tag in player_tags for tag in required_tags) or any(
+                    skill in player_skills for skill in required_skills
+                )
+
+            if has_access and layer_data.get("desc"):
+                revealed_layers.append(f"🕵️ Insight ({layer_name}): {layer_data.get('desc')}")
+
         neighbors = self.map_engine.get_neighbors(curr_loc)
         exits = [key.split(":", 1)[1] for key in neighbors.keys() if ":" in key]
 
-        return (
-            f"📍 地点: {node_data.get('name')}\n"
-            f"👁️ 观察: {node_data.get('desc')}\n"
-            f"🌟 特征: {node_data.get('geo_feature')}\n"
-            f"🚪 出口: {', '.join(exits)}"
-        )
+        observation_lines = [
+            f"📍 地点: {node_data.get('name')}",
+            f"👁️ 观察: {base_desc or '这里暂时没有可见的描述。'}",
+            f"🌟 特征: {node_data.get('geo_feature')}",
+        ]
+
+        if revealed_layers:
+            observation_lines.extend(revealed_layers)
+
+        observation_lines.append(f"🚪 出口: {', '.join(exits)}")
+
+        return "\n".join(observation_lines)
 
     # =========================================================================
     # 🧠 智能中枢 (带记忆版)
