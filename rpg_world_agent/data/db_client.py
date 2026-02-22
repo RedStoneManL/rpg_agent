@@ -8,7 +8,7 @@ import redis
 import urllib3
 from minio import Minio
 
-from config.settings import AGENT_CONFIG
+from rpg_world_agent.config.settings import AGENT_CONFIG
 
 
 class DBClient:
