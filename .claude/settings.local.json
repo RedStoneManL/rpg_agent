@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree -L 4 -I \"__pycache__|*.pyc\" /home/l00853527/claude_code/rpg/rpg_agent-main)",
+      "Bash(wc -l /home/l00853527/claude_code/rpg/rpg_agent-main/rpg_world_agent/**/*.py)",
+      "Bash(wc -l /home/l00853527/claude_code/rpg/rpg_agent-main/*.py)",
+      "Bash(python3:*)",
+      "Bash(pip3 install:*)",
+      "Bash(xxd:*)",
+      "Bash(python:*)"
+    ]
+  }
+}

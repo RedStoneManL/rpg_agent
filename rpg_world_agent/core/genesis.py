@@ -3,10 +3,10 @@
 import random
 from typing import Any, Dict, List, Optional
 
-from config.seeds import CRISIS_SEEDS
-from core.generators import ContentGenerator
+from rpg_world_agent.config.seeds import CRISIS_SEEDS
+from rpg_world_agent.core.generators import ContentGenerator
 # 新增引用
-from core.map_engine import MapTopologyEngine
+from rpg_world_agent.core.map_engine import MapTopologyEngine
 
 
 class WorldGenerator:

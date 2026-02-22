@@ -10,11 +10,11 @@ AGENT_CONFIG = {
         "The Awakening of the Old Ones",
     ),
     "llm": {
-        "base_url": os.getenv("RPG_LLM_BASE_URL", "http://100.102.191.192:1025/v1"),
+        "base_url": os.getenv("RPG_LLM_BASE_URL", "http://100.102.191.165:1025/v1"),
         "api_key": os.getenv("RPG_LLM_API_KEY", "xx"),
-        "model": os.getenv("RPG_LLM_MODEL", "Qwen3-32B"),
+        "model": os.getenv("RPG_LLM_MODEL", "GLM-4.7-w8a8"),
         "temperature": float(os.getenv("RPG_LLM_TEMPERATURE", "0.2")),
-        "max_tokens": int(os.getenv("RPG_LLM_MAX_TOKENS", "80000")),
+        "max_tokens": int(os.getenv("RPG_LLM_MAX_TOKENS", "48000")),
     },
     "stages": {
         "genesis": int(os.getenv("RPG_STAGE_GENESIS_TOKENS", "8000")),

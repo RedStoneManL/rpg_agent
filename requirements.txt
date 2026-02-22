@@ -1,0 +1,15 @@
+# RPG Game Engine Dependencies
+
+# Core
+redis>=5.0.0
+minio>=7.2.0
+urllib3>=2.0.0
+
+# LLM Client (OpenAI compatible)
+openai>=1.0.0
+
+# Optional: for better JSON parsing
+pydantic>=2.0.0
+
+# Optional: for async support (future use)
+aiohttp>=3.9.0

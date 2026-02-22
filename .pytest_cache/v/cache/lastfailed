@@ -1,0 +1,19 @@
+{
+  "tests/test_core/test_map_engine.py::TestMapEngineNodeOperations::test_save_node_sets_ttl": true,
+  "tests/test_core/test_map_engine.py::TestMapEngineLLMIntegration::test_generate_route_concept_returns_fallback_on_missing_nodes": true,
+  "tests/test_core/test_map_engine.py::TestMapEngineLLMIntegration::test_create_dynamic_sub_location_creates_node_and_connection": true,
+  "tests/test_data_layer/test_llm_client.py::TestLLMClientConfiguration::test_client_uses_agent_config_base_url": true,
+  "tests/test_data_layer/test_llm_client.py::TestLLMClientConfiguration::test_client_uses_default_values_for_missing_config": true,
+  "tests/test_core/test_cognition_system.py::TestCognitionPlayerState::test_update_player_state_stores_simple_values": true,
+  "tests/test_core/test_cognition_system.py::TestCognitionListSaves::test_list_saves_returns_metadata": true,
+  "tests/test_core/test_cognition_system.py::TestCognitionDeleteSave::test_delete_save_returns_false_for_nonexistent": true,
+  "tests/test_data_layer/test_db_client.py::TestRedisSingleton::test_redis_config_uses_agent_config": true,
+  "tests/test_data_layer/test_db_client.py::TestMinIOSingleton::test_minio_creates_bucket_if_not_exists": true,
+  "tests/test_data_layer/test_db_client.py::TestMinIOSingleton::test_minio_initialization_fails_on_connection_error": true,
+  "tests/test_data_layer/test_db_client.py::TestEnvironmentVariableOverrides::test_environment_variable_override[RPG_REDIS_HOST-config_key0-custom-host]": true,
+  "tests/test_data_layer/test_db_client.py::TestEnvironmentVariableOverrides::test_environment_variable_override[RPG_REDIS_PORT-config_key1-9999]": true,
+  "tests/test_data_layer/test_db_client.py::TestEnvironmentVariableOverrides::test_environment_variable_override[RPG_MINIO_ENDPOINT-config_key2-custom-endpoint:9000]": true,
+  "tests/test_data_layer/test_db_client.py::TestEnvironmentVariableOverrides::test_environment_variable_override[RPG_LLM_BASE_URL-config_key3-http://custom-llm/v1]": true,
+  "tests/test_core/test_cognition_system.py::TestCognitionPlayerState::test_get_player_state_handles_corrupted_json": true,
+  "tests/test_data_layer/test_db_client.py": true
+}

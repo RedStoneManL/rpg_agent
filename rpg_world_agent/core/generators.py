@@ -3,7 +3,7 @@
 import json
 from typing import Any, Dict, List, Optional
 
-from config.rules import VALID_SKILLS, VALID_TAG_CATEGORIES
+from rpg_world_agent.config.rules import VALID_SKILLS, VALID_TAG_CATEGORIES
 
 NPC_L1_PROMPT_TEMPLATE = """
 你是一个严谨的 RPG 数据策划。请基于以下规则和约束，生成 NPC 数据。
@@ -75,13 +75,13 @@ TRANSITION_PROMPT_TEMPLATE = """
 3. 设定旅行难度 (1-5)。
 
 请输出纯 JSON 格式 (不要包含 Markdown 标记):
-{
+{{
     "route_name": "通路名称",
     "geo_type": "地貌类型 (e.g. 森林, 沙漠, 海洋)",
     "description": "一段关于这条路的描述，用于向导向玩家介绍",
     "risk_level": 3,
     "rumors": ["传闻1", "传闻2"]
-}
+}}
 """
 
 
