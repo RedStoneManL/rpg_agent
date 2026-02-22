@@ -4,9 +4,9 @@ import re
 import uuid
 from typing import Dict, List, Optional
 
-from config.settings import AGENT_CONFIG
-from core.generators import ContentGenerator
-from data.db_client import DBClient
+from rpg_world_agent.config.settings import AGENT_CONFIG
+from rpg_world_agent.core.generators import ContentGenerator
+from rpg_world_agent.data.db_client import DBClient
 
 # 设置日志
 logger = logging.getLogger(__name__)
