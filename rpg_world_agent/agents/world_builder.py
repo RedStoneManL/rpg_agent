@@ -2,9 +2,9 @@ import json
 import re
 from typing import Any, Dict, Optional
 
-from config.rules import KNOWLEDGE_LEVELS, VALID_SKILLS, VALID_TAG_CATEGORIES
-from config.settings import AGENT_CONFIG
-from config.tool_schemas import WORLD_GEN_TOOLS
+from rpg_world_agent.config.rules import KNOWLEDGE_LEVELS, VALID_SKILLS, VALID_TAG_CATEGORIES
+from rpg_world_agent.config.settings import AGENT_CONFIG
+from rpg_world_agent.config.tool_schemas import WORLD_GEN_TOOLS
 
 def get_world_builder_system_prompt() -> str:
     """动态生成 System Prompt。"""
