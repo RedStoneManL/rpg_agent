@@ -12,11 +12,11 @@ import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from data.llm_client import get_llm_client
-from data.db_client import DBClient
-from config.settings import AGENT_CONFIG
-from core.genesis import WorldGenerator
-from core.map_engine import MapTopologyEngine
+from rpg_world_agent.data.llm_client import get_llm_client
+from rpg_world_agent.data.db_client import DBClient
+from rpg_world_agent.config.settings import AGENT_CONFIG
+from rpg_world_agent.core.genesis import WorldGenerator
+from rpg_world_agent.core.map_engine import MapTopologyEngine
 
 
 def print_section(title: str):
@@ -119,7 +119,7 @@ def initialize_world(use_llm: bool = True) -> dict:
     print("🔗 连接存储系统...")
     try:
         redis_client = DBClient.get_redis()
-        minio_client = DBClient.get_minio()
+        storage_adapter = DBClient.get_storage_adapter()
         print("✅ 存储连接成功\n")
     except Exception as e:
         print(f"❌ 存储连接失败: {e}\n")

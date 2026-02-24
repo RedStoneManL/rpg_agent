@@ -6,7 +6,14 @@ OpenAI-compatible LLM clients used throughout the RPG engine.
 
 from typing import Optional
 
-from openai import OpenAI
+# Try to import openai, fall back to mock for local development
+try:
+    from openai import OpenAI
+    _openai_available = True
+except ImportError:
+    from rpg_world_agent.data.mock_openai import OpenAI as MockOpenAI
+    OpenAI = MockOpenAI
+    _openai_available = False
 
 from rpg_world_agent.config.settings import AGENT_CONFIG
 
@@ -19,10 +26,10 @@ class LLMClientFactory:
     reducing connection overhead and maintaining consistency across the application.
     """
 
-    _instance: Optional[OpenAI] = None
+    _instance = None
 
     @classmethod
-    def get_client(cls) -> OpenAI:
+    def get_client(cls):
         """
         Get or create the LLM client instance.
 
@@ -62,6 +69,6 @@ class LLMClientFactory:
 
 
 # Convenience function for quick access
-def get_llm_client() -> OpenAI:
+def get_llm_client():
     """Get the LLM client instance (alias for LLMClientFactory.get_client)."""
     return LLMClientFactory.get_client()

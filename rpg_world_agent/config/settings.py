@@ -22,6 +22,10 @@ AGENT_CONFIG = {
         "map_gen": int(os.getenv("RPG_STAGE_MAP_TOKENS", "2000")),
         "cognition": int(os.getenv("RPG_STAGE_COGNITION_TOKENS", "2000")),
     },
+    "storage": {
+        "type": os.getenv("RPG_STORAGE_TYPE", "local"),  # "local" or "minio"
+        "base_path": os.getenv("RPG_STORAGE_PATH", "./saves"),
+    },
     "minio": {
         "endpoint": os.getenv("RPG_MINIO_ENDPOINT", "100.102.191.200:9000"),
         "access_key": os.getenv("RPG_MINIO_ACCESS_KEY", "minioadmin"),

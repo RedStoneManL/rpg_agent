@@ -2,7 +2,10 @@
 
 # Core
 redis>=5.0.0
-minio>=7.2.0
+
+# Optional Storage: MinIO (only needed if RPG_STORAGE_TYPE=minio)
+# Uncomment if using MinIO storage:
+# minio>=7.2.0
 urllib3>=2.0.0
 
 # LLM Client (OpenAI compatible)

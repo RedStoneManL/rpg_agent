@@ -13,14 +13,14 @@ from typing import Dict, List, Optional
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from data.llm_client import get_llm_client
-from data.db_client import DBClient
-from config.settings import AGENT_CONFIG
-from core.runtime import RuntimeEngine
-from core.cognition import CognitionSystem
-from core.player_character import PlayerCharacter, create_character
-from core.genesis import WorldGenerator
-from agents.world_builder import WorldBuilderAgent
+from rpg_world_agent.data.llm_client import get_llm_client
+from rpg_world_agent.data.db_client import DBClient
+from rpg_world_agent.config.settings import AGENT_CONFIG
+from rpg_world_agent.core.runtime import RuntimeEngine
+from rpg_world_agent.core.cognition import CognitionSystem
+from rpg_world_agent.core.player_character import PlayerCharacter, create_character
+from rpg_world_agent.core.genesis import WorldGenerator
+from rpg_world_agent.agents.world_builder import WorldBuilderAgent
 
 
 def print_banner():
@@ -321,7 +321,7 @@ def main():
     print("🔗 检查存储连接...")
     try:
         DBClient.get_redis()
-        DBClient.get_minio()
+        DBClient.get_storage_adapter()
         print("✅ 存储系统连接正常\n")
     except Exception as e:
         print(f"❌ 存储系统连接失败: {e}")
@@ -388,7 +388,7 @@ def main():
     if session_id is None or choice != "1":
         # 新游戏或未加载存档：初始化玩家
         engine.initialize_player(
-            start_location=start_location,
+            start_location_id=start_location,
             initial_tags=["traveler", "outsider"]
         )
         print("🎭 玩家角色已创建")

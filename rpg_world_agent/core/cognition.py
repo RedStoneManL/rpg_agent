@@ -1,11 +1,10 @@
-"""Session cognition and state management backed by Redis and MinIO."""
+"""Session cognition and state management backed by Redis and storage adapters."""
 
 import json
 from typing import Dict, List, Optional, TypedDict
 
 from rpg_world_agent.config.settings import AGENT_CONFIG
 from rpg_world_agent.data.db_client import DBClient
-from minio.error import S3Error
 
 SAVE_PREFIX = "saves/"
 
@@ -34,14 +33,15 @@ class CognitionSystem:
     def __init__(self, session_id: str):
         self.session_id = session_id
         self.redis = DBClient.get_redis()
-        self.minio = DBClient.get_minio()
+        self.storage = DBClient.get_storage_adapter()
         self.ttl = AGENT_CONFIG["redis"]["ttl"]
         self.bucket_name = AGENT_CONFIG["minio"]["bucket_name"]
+        self.storage_type = AGENT_CONFIG.get("storage", {}).get("type", "local")
 
         # Redis Key 规范
-        self.history_key = f"rpg:history:{session_id}"  # 对话历史
-        self.state_key = f"rpg:state:{session_id}"  # RPG 状态 (HP, Location, Attributes)
-        self.meta_key = f"rpg:meta:{session_id}"  # 存档元数据
+        self.history_key = f"rpg:history:{session_id}"
+        self.state_key = f"rpg:state:{session_id}"
+        self.meta_key = f"rpg:meta:{session_id}"
 
     def add_message(self, role: str, content: str) -> None:
         """写入短期记忆 (对话流)。"""
@@ -64,8 +64,6 @@ class CognitionSystem:
         更新玩家实时状态 (比如移动了位置，扣了血)
         updates: {"hp": 90, "location": "loc_tavern", "attributes": {...}}
         """
-        # 对于复杂对象（如 attributes），先序列化
-        # 数值也需要转换为字符串，因为 Redis 只存储字符串
         for key, value in updates.items():
             if isinstance(value, (dict, list)):
                 updates[key] = json.dumps(value, ensure_ascii=False)
@@ -79,14 +77,12 @@ class CognitionSystem:
     def get_player_state(self) -> Dict:
         """获取玩家当前所有状态。"""
         state = self.redis.hgetall(self.state_key)
-        # 反序列化复杂字段
         for key in ["attributes", "skills", "inventory", "quests", "story_nodes"]:
             if key in state:
                 try:
                     state[key] = json.loads(state[key])
                 except (json.JSONDecodeError, TypeError):
                     pass
-        # 转换数字字段为整数
         for key in ["hp", "max_hp", "sanity", "max_sanity", "level", "exp", "gold"]:
             if key in state:
                 try:
@@ -97,7 +93,7 @@ class CognitionSystem:
 
     def archive_session(self) -> str:
         """
-        【存档】将 Redis 中的数据打包存入 MinIO。
+        【存档】将 Redis 中的数据打包存入存储。
 
         Returns:
             str: 存档对象名称 (如 "saves/session_001.json")
@@ -118,7 +114,7 @@ class CognitionSystem:
 
         object_name = f"{SAVE_PREFIX}{self.session_id}.json"
         try:
-            DBClient.save_json_to_minio(object_name, archive_data)
+            DBClient.save_json(object_name, archive_data)
             print(f"💾 存档已保存: {object_name}")
             return object_name
         except Exception as e:
@@ -126,7 +122,7 @@ class CognitionSystem:
 
     def load_session(self) -> bool:
         """
-        【读档】从 MinIO 加载存档到 Redis。
+        【读档】从存储加载存档到 Redis。
 
         Returns:
             bool: 加载成功返回 True，失败返回 False
@@ -134,25 +130,22 @@ class CognitionSystem:
         object_name = f"{SAVE_PREFIX}{self.session_id}.json"
 
         try:
-            archive_data = DBClient.load_json_from_minio(object_name)
+            archive_data = DBClient.load_json(object_name)
             if not archive_data:
                 print(f"❌ 存档不存在: {object_name}")
                 return False
 
-            # 恢复对话历史
             history = archive_data.get("history", [])
-            self.redis.delete(self.history_key)  # 清除旧历史
+            self.redis.delete(self.history_key)
             for msg in history:
                 self.redis.rpush(self.history_key, json.dumps(msg, ensure_ascii=False))
             self.redis.expire(self.history_key, self.ttl)
 
-            # 恢复玩家状态
             final_state = archive_data.get("final_state", {})
-            self.redis.delete(self.state_key)  # 清除旧状态
+            self.redis.delete(self.state_key)
             self.redis.hset(self.state_key, mapping=final_state)
             self.redis.expire(self.state_key, self.ttl)
 
-            # 恢复元数据
             metadata = archive_data.get("metadata", {})
             meta_str = json.dumps(metadata, ensure_ascii=False)
             self.redis.set(self.meta_key, meta_str)
@@ -176,20 +169,16 @@ class CognitionSystem:
         Returns:
             List[SaveMetadata]: 存档元数据列表
         """
-        client = DBClient.get_minio()
-        bucket_name = AGENT_CONFIG["minio"]["bucket_name"]
+        storage = DBClient.get_storage_adapter()
         saves = []
 
         try:
-            objects = client.list_objects(bucket_name, prefix=SAVE_PREFIX, recursive=True)
+            objects = storage.list_objects(prefix=SAVE_PREFIX)
 
-            for obj in objects:
-                object_name = obj.object_name
-                # 提取 session_id (去掉完整路径和扩展名)
+            for object_name in objects:
                 session_id = object_name.replace(SAVE_PREFIX, "").replace(".json", "")
 
-                # 尝试读取存档元数据
-                archive_data = DBClient.load_json_from_minio(object_name)
+                archive_data = DBClient.load_json(object_name)
                 if archive_data:
                     metadata = archive_data.get("metadata", {})
                     final_state = archive_data.get("final_state", {})
@@ -203,7 +192,7 @@ class CognitionSystem:
                         sanity=final_state.get("sanity", "N/A"),
                     ))
 
-        except S3Error as e:
+        except Exception as e:
             print(f"❌ 列出存档失败: {e}")
 
         return saves
@@ -218,11 +207,10 @@ class CognitionSystem:
         object_name = f"{SAVE_PREFIX}{self.session_id}.json"
 
         try:
-            client = DBClient.get_minio()
-            client.remove_object(self.bucket_name, object_name)
+            DBClient.delete_json(object_name)
             print(f"🗑️ 存档已删除: {object_name}")
             return True
-        except S3Error as e:
+        except Exception as e:
             print(f"❌ 删除存档失败: {e}")
             return False
 
@@ -232,21 +220,17 @@ class CognitionSystem:
 
         state = self.get_player_state()
 
-        # 尝试从 Redis 获取已有元数据
         meta_str = self.redis.get(self.meta_key)
         if meta_str:
             try:
                 metadata = json.loads(meta_str)
-                # 更新时间和位置
                 metadata["timestamp"] = datetime.now().isoformat()
                 metadata["location"] = state.get("location", "Unknown")
-                # 增加游戏时长
                 metadata["playtime_minutes"] = metadata.get("playtime_minutes", 0) + 1
                 return metadata
             except json.JSONDecodeError:
                 pass
 
-        # 创建新元数据
         return {
             "session_id": self.session_id,
             "created_at": datetime.now().isoformat(),
@@ -258,6 +242,6 @@ class CognitionSystem:
         }
 
     def clear_session(self) -> None:
-        """清除当前会话的 Redis 数据（不删除 MinIO 存档）。"""
+        """清除当前会话的 Redis 数据（不删除存档）。"""
         self.redis.delete(self.history_key, self.state_key, self.meta_key)
         print(f"🧹 会话数据已清除: {self.session_id}")

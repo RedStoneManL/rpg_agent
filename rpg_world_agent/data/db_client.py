@@ -1,12 +1,16 @@
-"""Database client utilities for Redis and MinIO access."""
+"""Database client utilities for Redis and storage adapters."""
 
-import io
-import json
-from typing import Any, Dict, Optional
+import os
+from typing import Optional
 
-import redis
-import urllib3
-from minio import Minio
+# Try to import redis, fall back to mock for local development
+try:
+    import redis
+    _redis_available = True
+except ImportError:
+    from rpg_world_agent.data.mock_redis import MockRedis
+    redis = type('Redis', (MockRedis,), {})  # Make MockRedis behave like redis.Redis
+    _redis_available = False
 
 from rpg_world_agent.config.settings import AGENT_CONFIG
 
@@ -14,82 +18,84 @@ from rpg_world_agent.config.settings import AGENT_CONFIG
 class DBClient:
     """Provide singleton clients and helper methods for storage services."""
 
-    _redis_instance: Optional[redis.Redis] = None
-    _minio_instance: Optional[Minio] = None
+    _redis_instance = None
+    _storage_adapter_instance = None
 
     @classmethod
-    def get_redis(cls) -> redis.Redis:
-        """Return a singleton Redis connection."""
+    def get_redis(cls):
+        """Return a singleton Redis connection (or mock for local dev)."""
         if cls._redis_instance is None:
             conf = AGENT_CONFIG["redis"]
             try:
-                cls._redis_instance = redis.Redis(
+                if not _redis_available:
+                    print("⚠️  Redis module not available, using mock storage for local development")
+                    cls._redis_instance = MockRedis(
+                        host=conf["host"],
+                        port=conf["port"],
+                        db=conf["db"],
+                        decode_responses=True,
+                    )
+                else:
+                    cls._redis_instance = redis.Redis(
+                        host=conf["host"],
+                        port=conf["port"],
+                        password=conf["password"],
+                        db=conf["db"],
+                        decode_responses=True,
+                        socket_timeout=2,
+                    )
+                    cls._redis_instance.ping()
+                    print("✅ Redis 连接成功")
+            except Exception as exc:
+                print(f"❌ Redis 连接失败: {exc}")
+                print("⚠️  Using mock storage for local development")
+                cls._redis_instance = MockRedis(
                     host=conf["host"],
                     port=conf["port"],
-                    password=conf["password"],
                     db=conf["db"],
                     decode_responses=True,
-                    socket_timeout=2,
                 )
-                cls._redis_instance.ping()
-                print("✅ Redis 连接成功")
-            except Exception as exc:  # pylint: disable=broad-except
-                print(f"❌ Redis 连接失败: {exc}")
-                raise
         return cls._redis_instance
 
     @classmethod
-    def get_minio(cls) -> Minio:
-        """Return a singleton MinIO client."""
-        if cls._minio_instance is None:
-            conf = AGENT_CONFIG["minio"]
-            http_client = None
-            if conf["secure"]:
-                http_client = urllib3.PoolManager(cert_reqs="CERT_NONE", assert_hostname=False)
-
-            try:
-                cls._minio_instance = Minio(
-                    conf["endpoint"],
-                    access_key=conf["access_key"],
-                    secret_key=conf["secret_key"],
-                    secure=conf["secure"],
-                    http_client=http_client,
-                )
-                if not cls._minio_instance.bucket_exists(conf["bucket_name"]):
-                    cls._minio_instance.make_bucket(conf["bucket_name"])
-                print("✅ MinIO 连接成功")
-            except Exception as exc:  # pylint: disable=broad-except
-                print(f"❌ MinIO 连接失败: {exc}")
-                raise
-        return cls._minio_instance
+    def get_storage_adapter(cls):
+        """Return a singleton storage adapter (LocalFileStorage or MinIOStorage)."""
+        if cls._storage_adapter_instance is None:
+            from rpg_world_agent.data.storage_adapter import get_storage_adapter
+            cls._storage_adapter_instance = get_storage_adapter()
+        return cls._storage_adapter_instance
 
     @staticmethod
-    def save_json_to_minio(object_name: str, data: Dict[str, Any]) -> None:
-        """Save JSON data to MinIO."""
-        client = DBClient.get_minio()
-        bucket = AGENT_CONFIG["minio"]["bucket_name"]
-
-        json_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        data_stream = io.BytesIO(json_bytes)
-
-        client.put_object(
-            bucket,
-            object_name,
-            data_stream,
-            len(json_bytes),
-            content_type="application/json",
-        )
+    def save_json(object_name: str, data) -> None:
+        """Save JSON data to configured storage."""
+        adapter = DBClient.get_storage_adapter()
+        adapter.save_json(object_name, data)
 
     @staticmethod
-    def load_json_from_minio(object_name: str) -> Optional[Any]:
-        """Read JSON data from MinIO."""
-        client = DBClient.get_minio()
-        bucket = AGENT_CONFIG["minio"]["bucket_name"]
-        try:
-            response = client.get_object(bucket, object_name)
-            data = json.loads(response.read().decode("utf-8"))
-            response.close()
-            response.release_conn()
-            return data
-        except Exception:  # pylint: disable=broad-except
-            return None
+    def load_json(object_name: str):
+        """Read JSON data from configured storage."""
+        adapter = DBClient.get_storage_adapter()
+        return adapter.load_json(object_name)
+
+    @staticmethod
+    def delete_json(object_name: str) -> bool:
+        """Delete JSON object from configured storage."""
+        adapter = DBClient.get_storage_adapter()
+        return adapter.delete_object(object_name)
+
+    @staticmethod
+    def list_json(prefix: str = ""):
+        """List JSON objects with given prefix."""
+        adapter = DBClient.get_storage_adapter()
+        return adapter.list_objects(prefix)
+
+    # Backward compatibility methods (deprecated)
+    @staticmethod
+    def save_json_to_minio(object_name: str, data) -> None:
+        """[Deprecated] Save JSON data to storage. Use save_json instead."""
+        DBClient.save_json(object_name, data)
+
+    @staticmethod
+    def load_json_from_minio(object_name: str):
+        """[Deprecated] Read JSON data from storage. Use load_json instead."""
+        return DBClient.load_json(object_name)
