@@ -201,7 +201,7 @@ class RuntimeEngine:
 
         # Trigger narrative generated hooks
         self.plugin_manager.invoke_hook(
-            PluginHookType.ON_Narration_GENERATED,
+            PluginHookType.ON_NARRATION_GENERATED,
             response,
             {"user_input": user_input, "location": curr_loc}
         )
